@@ -1,16 +1,15 @@
 {
   "name": "margins-plugins",
   "owner": { "name": "Alessandro Vigano" },
-  "metadata": { "pluginRoot": "./plugins" },
   "plugins": [
     {
       "name": "margins",
-      "source": "margins",
+      "source": "./plugins/margins",
       "description": "Margins for Claude Code — full-fidelity document review (markdown + images) via the margins CLI. Post discussions, read feedback, and manage workspaces. Requires the `margins` npm CLI."
     },
     {
       "name": "margins-cowork",
-      "source": "margins-cowork",
+      "source": "./plugins/margins-cowork",
       "description": "Margins for Claude Cowork / web — publish markdown for review with no Git, npm, or CLI. Bundled connector, one-time sign-in. Markdown only."
     }
   ]

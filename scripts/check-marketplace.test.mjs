@@ -26,7 +26,6 @@ function makeRepo(manifest, pluginDirs = []) {
 
 const manifest = (plugins) => ({
   name: "margins-plugins",
-  metadata: { pluginRoot: "./plugins" },
   plugins,
 });
 
@@ -41,8 +40,8 @@ function withRepo(root, fn) {
 test("happy path: clean manifest with existing plugin dirs passes", () => {
   const root = makeRepo(
     manifest([
-      { name: "margins", source: "margins" },
-      { name: "margins-cowork", source: "margins-cowork" },
+      { name: "margins", source: "./plugins/margins" },
+      { name: "margins-cowork", source: "./plugins/margins-cowork" },
     ]),
     ["margins", "margins-cowork"],
   );
@@ -55,7 +54,7 @@ test("happy path: clean manifest with existing plugin dirs passes", () => {
 
 test("error path: an entry with a version field fails and names the entry", () => {
   const root = makeRepo(
-    manifest([{ name: "margins", source: "margins", version: "1.2.3" }]),
+    manifest([{ name: "margins", source: "./plugins/margins", version: "1.2.3" }]),
     ["margins"],
   );
   withRepo(root, () => {
@@ -66,7 +65,7 @@ test("error path: an entry with a version field fails and names the entry", () =
 });
 
 test("edge: a dangling source (missing plugin dir) fails", () => {
-  const root = makeRepo(manifest([{ name: "margins", source: "margins" }]), []);
+  const root = makeRepo(manifest([{ name: "margins", source: "./plugins/margins" }]), []);
   withRepo(root, () => {
     const { ok, errors } = checkMarketplace(root);
     assert.equal(ok, false);
