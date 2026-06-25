@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "margins": {
+      "type": "http",
+      "url": "https://margins.thealvistar.com/api/mcp",
+      "oauth": {
+        "clientId": "margins-claude-connector"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "margins-cowork",
+  "version": "0.1.2",
+  "description": "Publish a remembered folder of markdown to a Margins workspace for review from Claude Cowork, and address reviewer comments — no Git, npm, CLI, or GitHub account. Bundles the Margins connector so onboarding is install + one sign-in.",
+  "author": { "name": "Margins" },
+  "commands": "./commands",
+  "mcpServers": "./.mcp.json"
+}
