@@ -250,6 +250,22 @@ def test_error_unmatched_anchor_becomes_flagged_doc_start_comment_and_still_succ
     assert summary["uncertain"] == 1
 
 
+def test_edge_unanchored_discussion_is_document_level_not_uncertain(out):
+    # Margins allows a discussion on the document as a whole — `anchorSelectedText`
+    # is simply absent. That is not a failed match, and labelling it "uncertain"
+    # would cry wolf. It lands at the top, correctly described.
+    proc = run_injector(
+        SAMPLE, out, {"comments": [{"body": "alice: commento generale sul documento."}]}
+    )
+    summary = json.loads(proc.stdout)
+    assert summary["document_level"] == 1
+    assert summary["uncertain"] == 0
+
+    text = margins_comments(out)[0][1]
+    assert "document-level" in text.lower()
+    assert "position uncertain" not in text.lower()
+
+
 def test_error_ambiguous_anchor_is_flagged_rather_than_guessed(out):
     # "Da definire in fase di analisi." appears under BOTH Sezione A and B.
     proc = run_injector(

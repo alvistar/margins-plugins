@@ -60,6 +60,7 @@ except ImportError:  # pragma: no cover - the skill always supplies the dep
 # string, so it is a contract with our own past output — not a display label.
 MARGINS_AUTHOR = "Margins Review"
 UNCERTAIN_PREFIX = "[position uncertain] "
+DOC_LEVEL_PREFIX = "[document-level] "
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
@@ -306,18 +307,26 @@ def locate(paragraphs, item) -> tuple[object, int, int] | None:
     return p, s, e
 
 
-def body_paragraphs(text: str, uncertain: bool, item) -> list[str]:
-    lines = [ln for ln in (text or "").split("\n")]
-    if not lines:
-        lines = [""]
-    if uncertain:
+def body_paragraphs(text: str, placement: str, item) -> list[str]:
+    """Render the thread, prefixed with a note when it did not land on its quote.
+
+    A discussion with no quoted text at all (a doc-level comment in Margins) is
+    NOT a failure — it belongs at the top of the document and says so. Labelling
+    it "uncertain" would cry wolf at the reviewer.
+    """
+    lines = (text or "").split("\n")
+    if placement == "uncertain":
         anchor = (item.get("anchor") or "").strip()
-        note = UNCERTAIN_PREFIX + (
-            f'could not locate this quote in the document: "{anchor[:120]}"'
-            if anchor
-            else "this comment had no usable quote."
-        )
-        lines = [note, ""] + lines
+        lines = [
+            UNCERTAIN_PREFIX
+            + f'could not locate this quote in the document: "{anchor[:120]}"',
+            "",
+        ] + lines
+    elif placement == "document_level":
+        lines = [
+            DOC_LEVEL_PREFIX + "this discussion is not anchored to any specific text.",
+            "",
+        ] + lines
     ref = item.get("id")
     if ref:
         lines = lines + ["", f"(Margins discussion {ref})"]
@@ -398,7 +407,7 @@ def main(argv: list[str] | None = None) -> int:
         ((p, r) for p in paragraphs for r in para_runs(p) if run_text(r)), None
     )
 
-    injected = uncertain = 0
+    injected = uncertain = document_level = 0
     for item in comments:
         hit = locate(paragraphs, item)
         runs = []
@@ -406,18 +415,23 @@ def main(argv: list[str] | None = None) -> int:
             p, start, end = hit
             runs = proxies(p, runs_covering(p, start, end))
 
-        if not runs:
+        if runs:
+            placement = "injected"
+        else:
             if doc_start is None:
                 raise InjectError(
                     "EMPTY_DOCUMENT",
                     "the document has no text to anchor a comment to.",
                 )
             p0, r0 = doc_start
-            runs, is_uncertain = proxies(p0, [r0]), True
-        else:
-            is_uncertain = False
+            runs = proxies(p0, [r0])
+            # No quote to begin with is a doc-level discussion; a quote we could
+            # not place is a genuine miss. Only the latter is a warning.
+            placement = (
+                "document_level" if not (item.get("anchor") or "").strip() else "uncertain"
+            )
 
-        lines = body_paragraphs(item.get("body", ""), is_uncertain, item)
+        lines = body_paragraphs(item.get("body", ""), placement, item)
         comment = doc.add_comment(
             runs=runs,
             text=lines[0],
@@ -427,10 +441,12 @@ def main(argv: list[str] | None = None) -> int:
         for line in lines[1:]:
             comment.add_paragraph(line)
 
-        if is_uncertain:
+        if placement == "injected":
+            injected += 1
+        elif placement == "uncertain":
             uncertain += 1
         else:
-            injected += 1
+            document_level += 1
 
     try:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -442,6 +458,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             "injected": injected,
             "uncertain": uncertain,
+            "document_level": document_level,
             "stripped": stripped,
             "output": str(args.output),
         },
