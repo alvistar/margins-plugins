@@ -23,4 +23,4 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
       - name: Run margins-docx injector tests
-        run: uvx --with python-docx --with pytest pytest plugins/margins/skills/margins-docx/tests
+        run: uvx --with "python-docx>=1.2" --with pytest pytest plugins/margins/skills/margins-docx/tests

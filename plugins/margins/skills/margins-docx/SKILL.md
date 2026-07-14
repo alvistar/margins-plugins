@@ -88,7 +88,9 @@ MD="${DOCX%.docx}.md"          # spec.docx -> spec.md, same directory
 uvx --from "markitdown[docx]" markitdown "$DOCX" > "$MD"
 ```
 
-The `[docx]` extra is **required** — a bare `uvx markitdown` fails on Word files.
+The `[docx]` extra is **required** — a bare `uvx markitdown` fails on Word files. Check
+the exit code: if the conversion fails or the `.md` comes out empty/garbled, stop and
+tell the user (see the table below) — never publish an empty or mangled document.
 
 Keep that `.md` path stable across runs. The CLI keys a stash to the **file path** it
 published, so `spec.md` in the same place is what makes step 3 update the existing
@@ -137,7 +139,9 @@ decide:
 > wasn't created on this machine. Do you want to **update that stash**, or **start a
 > fresh one**?"
 
-Then re-run with `--yes` (update) or `--new` (fork) according to their answer.
+Then re-run with `--yes` (update) or `--new` (fork) according to their answer. This is a
+**separate decision** from the original request — "review this doc" is not consent to
+overwrite a stranger's stash, so ask even if the user already said "just publish it."
 
 **The stash was swept or deleted.** The CLI says so and creates a fresh one. The slug
 changes, so **the share URL changes too** — re-print the new one and tell the user the
@@ -190,23 +194,31 @@ Each discussion carries:
 | Field | Use |
 |---|---|
 | `anchorSelectedText` | The text the reviewer highlighted — **this is the quote to find in the Word file** |
-| `anchorHeadingText` | The nearest heading — use it to disambiguate a quote that appears twice |
+| `anchorHeadingText` | The nearest heading — pass as `before` to disambiguate a repeated quote |
 | `body`, `authorName` | The opening message |
 | `replies[]` | The rest of the thread (`body` + `authorName` each) |
-| `id` | Carried into the Word comment for traceability |
+| `id` | Carried into the Word comment, and echoed back per-comment in the summary |
 
 ## 2. Match each quote to the original document
 
 **You** do the matching — that's the part that needs judgement. The script that follows
 does the injection and deliberately refuses to guess.
 
+- **Copy `anchorSelectedText` into `anchor` verbatim.** Don't retype it, shorten it, or
+  "fix" a typo or accent — the script folds punctuation and whitespace for you, so an
+  exact copy is what carries the match. A cleaned-up quote either misses (safe: flagged)
+  or, worse, coincidentally matches different text elsewhere.
 - Match **plain text against plain text.** The quote is rendered text as the reviewer
   saw it; the Word document's text is plain too. Never try to match markdown syntax
   (`## Heading`, `**bold**`) against the document — those characters are not in it.
 - A discussion with **no** `anchorSelectedText` is a comment on the document as a whole.
   Leave its `anchor` out; it lands at the top of the document, labelled as document-level.
-- If a quote appears more than once, pass `before` (usually `anchorHeadingText`) so the
-  right occurrence wins.
+- **Disambiguate a repeated quote with context.** If the same quote could match more than
+  one place, pass `before` (usually `anchorHeadingText`) and/or `after` — short snippets
+  of the text immediately preceding/following the quote. The script only compares them
+  against the quote's own paragraph and its immediate neighbours, so pick context that
+  sits right next to the quote, not a heading several paragraphs up. Without enough
+  context to leave exactly one match, the script flags the comment rather than guessing.
 - If you cannot confidently place a quote, **pass it anyway with its anchor** and let the
   script flag it. A comment parked at the top of the document saying "position uncertain"
   is honest; a comment confidently attached to the wrong sentence is a bug the user will
@@ -217,62 +229,87 @@ Build the payload — one entry per discussion, thread rendered into `body`:
 ```json
 {"comments": [
   {"id": "abc123",
-   "author": "alice",
    "anchor": "Accesso all'app tramite dati biometrici",
    "before": "Onboarding e accesso",
+   "after": "Il pagamento avviene",
    "body": "alice: Face ID obbligatorio o opzionale?\nbob: Opzionale — la passkey resta l'alternativa."}
 ]}
 ```
 
-Render the whole thread into `body`, one message per line, each prefixed with its
-author — the opening message first, then the replies in order. It becomes one Word
-comment per discussion, not one per message.
+`before`/`after` are optional — include them only to break a tie. Render the whole thread
+into `body`, one message per line, each prefixed with its author — the opening message
+first, then the replies in order. Every comment is authored "Margins Review" in Word (the
+per-message authors live in the body text); it becomes one Word comment per discussion,
+not one per message.
 
 ## 3. Inject them into a copy of the original
 
 ```bash
-uvx --with python-docx python3 \
+uvx --with "python-docx>=1.2" python3 \
   "${CLAUDE_PLUGIN_ROOT}/skills/margins-docx/scripts/inject_comments.py" \
   --input "$DOCX" \
   --output "${DOCX%.docx}.reviewed.docx" \
   < payload.json
 ```
 
-Use `${CLAUDE_PLUGIN_ROOT}` — never a path relative to the working directory. If it is
-unset, the export cannot find its script; tell the user their Claude Code host isn't
+Pin `python-docx>=1.2` as shown — the comment-anchoring API the script relies on landed
+in 1.2. Use `${CLAUDE_PLUGIN_ROOT}` — never a path relative to the working directory. If
+it is unset, the export cannot find its script; tell the user their Claude Code host isn't
 providing `CLAUDE_PLUGIN_ROOT` rather than guessing at a path.
 
 The script prints a summary:
 
 ```json
-{"injected": 7, "uncertain": 1, "document_level": 2, "stripped": 0, "output": "spec.reviewed.docx"}
+{"injected": 7, "uncertain": 1, "document_level": 2, "stripped": 0,
+ "results": [{"id": "abc123", "placement": "uncertain"}, {"id": "def456", "placement": "injected"}],
+ "output": "spec.reviewed.docx"}
 ```
 
 - `injected` — landed on the quoted text.
-- `uncertain` — had a quote, couldn't place it; parked at the top of the document with a
-  "position uncertain" note. **Always tell the user the count and which ones**, so they
-  can place them by hand.
+- `uncertain` — had a quote the script couldn't place; parked at the top of the document
+  with a "position uncertain" note. **Read `results[]` and tell the user exactly which
+  discussion ids are uncertain** (`placement == "uncertain"`), so they can place those by
+  hand — the counts alone don't say which.
 - `document_level` — discussions that were never anchored to specific text.
 - `stripped` — Margins comments from a previous export that were removed before
   re-injecting. This is why exporting twice doesn't duplicate anything.
 
-On a non-zero exit the script prints one line shaped `margins-docx: CODE: message`
-(`INPUT_NOT_FOUND`, `NOT_A_DOCX`, `INVALID_JSON`, …). Translate it; don't paste it.
+**Sanity-check before handing back:** `injected + uncertain + document_level` should equal
+the number of discussions you put in the payload. If it doesn't, you dropped or duplicated
+an entry building the payload — fix it and re-run rather than reporting a wrong count.
+
+On a non-zero exit the script prints one line shaped `margins-docx: CODE: message`.
+Translate the code into a plain sentence — don't paste the raw line:
+
+| Code | What it means → what to say |
+|---|---|
+| `INPUT_NOT_FOUND` | The `.docx` path is wrong. Confirm the file with the user. |
+| `NOT_A_DOCX` | The file isn't a readable Word `.docx` (corrupt, or renamed from another format). Ask them to re-save it from Word. |
+| `INVALID_JSON` / `INVALID_PAYLOAD` | **Your** payload was malformed — a bug on your side. Rebuild it from the discussions and retry; don't blame the user's file. |
+| `MISSING_DEPENDENCY` | `python-docx` wasn't available — check you invoked the command with `uvx --with "python-docx>=1.2"`, not the bare interpreter. |
+| `OUTPUT_WRITE_FAILED` | Couldn't write the output (permissions/disk). Try a different output path. |
 
 ## 4. Hand back the file
 
 > "Here's `spec.reviewed.docx` — your original document with 7 Margins comments added.
-> Your text is untouched. One comment (`abc123`) couldn't be placed and is sitting at
-> the top of the document flagged 'position uncertain'."
+> Your text is untouched. One comment (discussion `abc123`) couldn't be placed and is
+> sitting at the top of the document flagged 'position uncertain'."
 
 ## What export does and doesn't do
 
 - **The original is never overwritten.** Output is always a separate `.reviewed.docx`.
 - **The document's own text is never edited** — comments are added, nothing else.
-- **Existing Word comments by real people are preserved.** Only comments authored by
-  "Margins Review" (our own previous exports) are cleared out before re-injecting.
+- **Existing Word comments by real people are preserved.** Only the script's own previous
+  exports are cleared before re-injecting (matched on the author tag *and* a private
+  marker, so even a human whose display name is "Margins Review" keeps their comments).
 - **Exporting is safe to repeat.** Re-running replaces our comments rather than stacking
-  new copies on top.
+  new copies on top, and the output is written atomically — a failed re-export never
+  destroys the previous good one.
 - **Word is a dead end for comment state.** Replying to or resolving these comments *in
   Word* does not flow back to Margins. Margins stays the source of truth for the
   discussion; the Word file is a snapshot for people who don't live in Margins.
+- **Known limits (all fail safe — flagged, never silently wrong):** a quote that lives
+  only in a header, footer, footnote, or text box can't be anchored and comes back
+  `uncertain`. Re-exporting a document whose Margins comments were manually resolved in
+  Word can leave a stale entry in Word's comment-state metadata; it's harmless (Word
+  ignores it), and since comment state doesn't round-trip anyway, don't rely on it.
