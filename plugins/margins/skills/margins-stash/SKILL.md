@@ -86,10 +86,26 @@ comments. The stash has its own slug (the `slug` from step 2's JSON, shaped
 $MARGINS discuss list <slug> --json
 ```
 
-Then help address each comment, update the document (re-run `margins stash` is **not**
-how you update — a stash is a fresh doc each time; for ongoing edits, open the review
-URL or use the web UI), and resolve threads. `/margins-read` reads comments the same
-way when given the stash slug.
+Then help address each comment, update the document, and resolve threads.
+`/margins-read` reads comments the same way when given the stash slug.
+
+**To publish an edit, re-run `margins stash` on the same file.** It updates the SAME
+stash — a new version at the same URL, with reviewers' comments intact and re-anchored
+to the new text — rather than forking a duplicate:
+
+```bash
+$MARGINS stash <same file> --json    # "action": "updated" (or "unchanged" if nothing moved)
+```
+
+> This in-place update needs **margins-cli 0.12.0 or newer**; older versions really did
+> fork a fresh doc every run. If the CLI reports that the server has no stash updates,
+> the *server* is behind — ask the user to update it, or pass `--new` to deliberately
+> create a separate stash.
+
+The CLI remembers which stash a file belongs to. If it reports that the binding wasn't
+created on this machine, it is refusing to overwrite a stash it can't vouch for — ask
+the user whether to **update** it (`--yes`) or **start a fresh one** (`--new`). Don't
+pass `--yes` on their behalf.
 
 ## 4. Images
 
