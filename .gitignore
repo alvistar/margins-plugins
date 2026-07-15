@@ -2,3 +2,9 @@ node_modules/
 .DS_Store
 .gstack/
 *.log
+
+# Python bytecode from the margins-docx injector tests. Everything under a
+# skill directory ships to every installer, so build junk must not land there.
+__pycache__/
+*.py[cod]
+.pytest_cache/
